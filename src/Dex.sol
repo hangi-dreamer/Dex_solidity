@@ -70,16 +70,29 @@ contract Dex {
         uint256 tokenYAmount,
         uint256 minimumLPTokenAmount
     ) external returns (uint256 LPTokenAmount) {
+        require(tokenXAmount > 0);
+        require(tokenYAmount > 0);
         require((oracle.getPrice(_tokenX) * tokenXAmount) == (oracle.getPrice(_tokenY) * tokenYAmount));
+        // require(IERC20(_tokenX).balanceOf(msg.sender) >= tokenXAmount, "ERC20: insufficient allowance");
+        // require(IERC20(_tokenY).balanceOf(msg.sender) >= tokenYAmount, "ERC20: insufficient allowance");
 
-        uint xBalance = IERC20(_tokenX).balanceOf(address(this));
-        uint yBalance = IERC20(_tokenY).balanceOf(address(this));
+        (uint xBalance, uint yBalance) = XYBalance();
 
         IERC20(_tokenX).transferFrom(msg.sender, address(this), tokenXAmount);
         IERC20(_tokenY).transferFrom(msg.sender, address(this), tokenYAmount);
 
-        LPTokenAmount = portion * 1 ether;
-        lpt.mint(msg.sender, LPTokenAmount);
+        uint newLpTokenCount;
+        if (xBalance < 1){
+            newLpTokenCount = tokenYAmount;
+        }
+        else {
+            newLpTokenCount = lpt.totalSupply() * tokenXAmount / xBalance;
+        }
+
+        require(newLpTokenCount >= minimumLPTokenAmount);
+
+        lpt.mint(msg.sender, newLpTokenCount);
+        LPTokenAmount = newLpTokenCount;
     }
 
     function swap(
@@ -94,10 +107,32 @@ contract Dex {
         uint256 LPTokenAmount,
         uint256 minimumTokenXAmount,
         uint256 minimumTokenYAmount
-    ) external returns (uint rx, uint ry) {}
+    ) external returns (uint rx, uint ry) {
+        require(LPTokenAmount > 0);
+        require(minimumTokenXAmount >= 0);
+        require(minimumTokenYAmount >= 0);
+        require(lpt.balanceOf(msg.sender) >= LPTokenAmount);
 
-    function transfer(
-        address to,
-        uint256 lpAmount
-    ) external returns (bool) {}
+        (uint xBalance, uint yBalance) = XYBalance();
+
+        uint lptTotalSupply = lpt.totalSupply();
+        // uint ratio;
+        // if (xBalance >= lptTotalSupply) {
+        //     ratio = xBalance / lptTotalSupply;
+        // }
+        // else {
+        //     ratio = lptTotalSupply / xBalance;
+        // }
+
+        rx = xBalance * LPTokenAmount / lptTotalSupply;
+        ry = yBalance * LPTokenAmount / lptTotalSupply;
+
+        require(rx >= minimumTokenXAmount);
+        require(rx >= minimumTokenYAmount);
+    }
+
+    function XYBalance() internal returns (uint x, uint y) {
+        x = IERC20(_tokenX).balanceOf(address(this));
+        y = IERC20(_tokenY).balanceOf(address(this));
+    }
 }
