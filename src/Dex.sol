@@ -78,24 +78,6 @@ contract Dex {
         IERC20(_tokenX).transferFrom(msg.sender, address(this), tokenXAmount);
         IERC20(_tokenY).transferFrom(msg.sender, address(this), tokenYAmount);
 
-        uint256 value1 = 2000;
-        uint256 value2 = 5; // 소수점 이하 자릿수가 18자리인 0.5를 나타냅니다.
-
-        uint256 fixedValue1 = toFixedPoint(value1, 0); // 정수 10을 고정소수점으로 변환합니다.
-        uint256 fixedValue2 = toFixedPoint(0, value2 * (SCALE_FACTOR / 10)); // 0.5를 고정소수점으로 변환합니다.
-
-        uint256 fixedResult = fixedMul(fixedValue1, fixedValue2); // 고정소수점 곱셈을 수행합니다.
-
-        (uint256 integerValue, uint256 decimalValue) = fromFixedPoint(fixedResult); // 고정소수점 결과를 정수와 소수로 변환합니다.
-        uint result = integerValue; // 여기서는 소수점 이하 자릿수를 무시하고 정수 부분만 사용합니다.
-
-        console.log(result);
-
-        // console.log(xBalance + tokenXAmount);
-        uint portion = tokenXAmount / (xBalance + tokenXAmount);
-        // console.log("tokenXAmount: %s", tokenXAmount);
-        // console.log("xBalance + tokenXAmount: %s", xBalance + tokenXAmount);
-        // console.log("protion: %s", portion);
         LPTokenAmount = portion * 1 ether;
         lpt.mint(msg.sender, LPTokenAmount);
     }
