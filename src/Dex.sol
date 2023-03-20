@@ -86,22 +86,18 @@ contract Dex {
             priceOfX = oracle.getPrice(_tokenX);
             priceOfY = oracle.getPrice(_tokenY);
 
-            require((priceOfX * tokenXAmount) / (priceOfY * tokenYAmount) == (priceOfX * balanceOfX) / (priceOfY * balanceOfY));
+            require((priceOfX * tokenXAmount) * 1 ether / (priceOfY * tokenYAmount) == (priceOfX * balanceOfX) * 1 ether / (priceOfY * balanceOfY), "invalid ratio");
         }
 
-        //       K =      sqrt((a가격     * a개수)       * (b가격     * b개수))
-        uint prevK = Math.sqrt((priceOfX * balanceOfX) * (priceOfY * balanceOfY), Math.Rounding.Up);
         IERC20(_tokenX).transferFrom(msg.sender, address(this), tokenXAmount);
         IERC20(_tokenY).transferFrom(msg.sender, address(this), tokenYAmount);
 
-        //        K =        sqrt((a가격     * (이전 a개수   + 추가된 a개수))      * (b가격     * (이전 b개수    + 추가된 b개수)))
-        uint currentK = Math.sqrt((priceOfX * (balanceOfX + tokenXAmount)) * (priceOfY * (balanceOfY + tokenYAmount)), Math.Rounding.Up);
-        uint balanceOfLpt = lpt.balanceOf(msg.sender);
-        if (balanceOfLpt > 0){
-            LPTokenAmount = balanceOfLpt * (priceOfX * tokenXAmount + priceOfY * tokenYAmount) / (priceOfX * balanceOfX + priceOfY * balanceOfY);
+        if (lptTotalSupply > 0){
+            LPTokenAmount = lptTotalSupply * (priceOfX * tokenXAmount + priceOfY * tokenYAmount) / (priceOfX * balanceOfX + priceOfY * balanceOfY);
         }
         else{
-            LPTokenAmount = currentK - prevK;
+            //     K =        sqrt((a가격     * (이전 a개수   + 추가된 a개수))      * (b가격     * (이전 b개수    + 추가된 b개수)))
+        LPTokenAmount = Math.sqrt((priceOfX * (balanceOfX + tokenXAmount)) * (priceOfY * (balanceOfY + tokenYAmount)), Math.Rounding.Up);
         }
 
         require(LPTokenAmount >= minimumLPTokenAmount);
