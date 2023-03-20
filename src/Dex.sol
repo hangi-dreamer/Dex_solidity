@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 import "forge-std/console.sol";
 
 import "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
+import "openzeppelin-contracts/contracts/utils/math/Math.sol";
 
 contract DreamOracle {
    address public operator;
@@ -20,9 +21,9 @@ contract DreamOracle {
    }
 
 
-   function setPrice(address token, uint256 price) external {
+   function setPrice(address token, uint256 price) external returns (uint) {
        require(msg.sender == operator, "only operator can set the price");
-       prices[token] = price;
+       return prices[token] = price;
    }
 }
 
@@ -43,10 +44,6 @@ contract LPT is ERC20("LPT", "LPT") {
     }
 }
 
-
-
-
-
 contract Dex {
     address _tokenX;
     address _tokenY;
@@ -54,8 +51,11 @@ contract Dex {
     LPT lpt = new LPT();
     DreamOracle oracle = new DreamOracle();
 
+    uint decimals = 10 ** 18;
+
     uint public amountOfX;
     uint public amountOfY;
+    uint K;
 
     constructor(address tokenX, address tokenY) {
         _tokenX = tokenX;
@@ -72,27 +72,42 @@ contract Dex {
     ) external returns (uint256 LPTokenAmount) {
         require(tokenXAmount > 0);
         require(tokenYAmount > 0);
-        require((oracle.getPrice(_tokenX) * tokenXAmount) == (oracle.getPrice(_tokenY) * tokenYAmount));
-        // require(IERC20(_tokenX).balanceOf(msg.sender) >= tokenXAmount, "ERC20: insufficient allowance");
-        // require(IERC20(_tokenY).balanceOf(msg.sender) >= tokenYAmount, "ERC20: insufficient allowance");
 
-        (uint xBalance, uint yBalance) = XYBalance();
+        uint lptTotalSupply = lpt.totalSupply();
+        uint priceOfX;
+        uint priceOfY;
+        (uint balanceOfX, uint balanceOfY) = pairTokenBalance();
 
+        if (lptTotalSupply < 1) {
+            priceOfX = oracle.setPrice(_tokenX, tokenXAmount / decimals);
+            priceOfY = oracle.setPrice(_tokenY, tokenYAmount / decimals);
+        }
+        else {
+            priceOfX = oracle.getPrice(_tokenX);
+            priceOfY = oracle.getPrice(_tokenY);
+
+            require((priceOfX * tokenXAmount) / (priceOfY * tokenYAmount) == (priceOfX * balanceOfX) / (priceOfY * balanceOfY));
+        }
+
+        //       K =      sqrt((a가격     * a개수)       * (b가격     * b개수))
+        uint prevK = Math.sqrt((priceOfX * balanceOfX) * (priceOfY * balanceOfY), Math.Rounding.Up);
         IERC20(_tokenX).transferFrom(msg.sender, address(this), tokenXAmount);
         IERC20(_tokenY).transferFrom(msg.sender, address(this), tokenYAmount);
 
-        uint newLpTokenCount;
-        if (xBalance < 1){
-            newLpTokenCount = tokenYAmount;
+        //        K =        sqrt((a가격     * (이전 a개수   + 추가된 a개수))      * (b가격     * (이전 b개수    + 추가된 b개수)))
+        uint currentK = Math.sqrt((priceOfX * (balanceOfX + tokenXAmount)) * (priceOfY * (balanceOfY + tokenYAmount)), Math.Rounding.Up);
+        uint balanceOfLpt = lpt.balanceOf(msg.sender);
+        if (balanceOfLpt > 0){
+            LPTokenAmount = balanceOfLpt * (priceOfX * tokenXAmount + priceOfY * tokenYAmount) / (priceOfX * balanceOfX + priceOfY * balanceOfY);
         }
-        else {
-            newLpTokenCount = lpt.totalSupply() * tokenXAmount / xBalance;
+        else{
+            LPTokenAmount = currentK - prevK;
         }
 
-        require(newLpTokenCount >= minimumLPTokenAmount);
+        require(LPTokenAmount >= minimumLPTokenAmount);
 
-        lpt.mint(msg.sender, newLpTokenCount);
-        LPTokenAmount = newLpTokenCount;
+        // console.log(LPTokenAmount);
+        address(this).call(abi.encodeWithSelector(this.transfer.selector, msg.sender, LPTokenAmount));
     }
 
     function swap(
@@ -100,7 +115,28 @@ contract Dex {
         uint256 tokenYAmount,
         uint256 tokenMinimumOutputAmount
     ) external returns (uint256 outputAmount) {
+        (uint balanceOfX, uint balanceOfY) = pairTokenBalance();
+        uint K = balanceOfX * balanceOfY;
 
+        if (tokenXAmount > 0) {
+            require(tokenYAmount == 0);
+                            // 원래있던 Y - (상수 K / (원래 있던 X + 새로넣은 X)  )    * 0.1%
+            outputAmount = (balanceOfY - (K / (balanceOfX + tokenXAmount))) * 999 / 1000;
+            IERC20(_tokenX).transferFrom(msg.sender, address(this), tokenXAmount);
+            IERC20(_tokenY).transfer( msg.sender, outputAmount);
+        }
+        else if (tokenYAmount > 0) {
+            require(tokenXAmount == 0);
+
+            outputAmount = (balanceOfX - (K / (balanceOfY + tokenYAmount))) * 999 / 1000;
+            IERC20(_tokenY).transferFrom(msg.sender, address(this), tokenYAmount);
+            IERC20(_tokenX).transfer(msg.sender, outputAmount);
+        }
+        else {
+            revert();
+        }
+
+        require(outputAmount >= tokenMinimumOutputAmount);
     }
 
     function removeLiquidity(
@@ -113,25 +149,27 @@ contract Dex {
         require(minimumTokenYAmount >= 0);
         require(lpt.balanceOf(msg.sender) >= LPTokenAmount);
 
-        (uint xBalance, uint yBalance) = XYBalance();
+        (uint balanceOfX, uint balanceOfY) = pairTokenBalance();
 
         uint lptTotalSupply = lpt.totalSupply();
-        // uint ratio;
-        // if (xBalance >= lptTotalSupply) {
-        //     ratio = xBalance / lptTotalSupply;
-        // }
-        // else {
-        //     ratio = lptTotalSupply / xBalance;
-        // }
 
-        rx = xBalance * LPTokenAmount / lptTotalSupply;
-        ry = yBalance * LPTokenAmount / lptTotalSupply;
+        rx = balanceOfX * LPTokenAmount / lptTotalSupply;
+        ry = balanceOfY * LPTokenAmount / lptTotalSupply;
 
         require(rx >= minimumTokenXAmount);
         require(rx >= minimumTokenYAmount);
     }
 
-    function XYBalance() internal returns (uint x, uint y) {
+    function transfer(address to, uint256 lpAmount) external returns (bool) {
+        require(lpAmount > 0);
+
+        lpt.mint(payable(address(this)), lpAmount);
+        lpt.transfer(payable(to), lpAmount);
+
+        return true;
+    }
+
+    function pairTokenBalance() internal returns (uint x, uint y) {
         x = IERC20(_tokenX).balanceOf(address(this));
         y = IERC20(_tokenY).balanceOf(address(this));
     }
