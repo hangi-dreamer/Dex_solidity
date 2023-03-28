@@ -156,6 +156,7 @@ contract Dex {
         require(rx >= minimumTokenYAmount);
         
         // token x, y transfer 부재...
+        // lp token burn 부재....
     }
 
     function transfer(address to, uint256 lpAmount) external returns (bool) {
