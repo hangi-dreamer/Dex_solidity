@@ -154,9 +154,12 @@ contract Dex {
 
         require(rx >= minimumTokenXAmount);
         require(rx >= minimumTokenYAmount);
+        
+        // token x, y transfer 부재...
     }
 
     function transfer(address to, uint256 lpAmount) external returns (bool) {
+        // onlyOwner 확인 부재...
         require(lpAmount > 0);
 
         lpt.mint(payable(address(this)), lpAmount);
